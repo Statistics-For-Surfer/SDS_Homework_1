@@ -1,0 +1,631 @@
+---
+title: "Homework 1 of Statistical Methods in Data Science"
+author: "Barba Paolo, Candi Matteo"
+date: '04/12/22'
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercise 1 Stopping Time
+
+### Process:
+
+Suppose that $X ∼ Unif(0, 1)$, and suppose we independently draw
+${Y_{1}, Y_{2}, Y_{3}, \dots}$ from yet another $Unif(0, 1)$ model until
+we reach the random stopping time T such that $(Y_{T} > X)$. The goal is
+to understand the distribution of T.
+
+### Simulation study:
+
+#### 1)
+
+The idea is the following: We generate m $Unif(0,1)$ and then use them
+as parameters of the geometric distributions. $X ∼ Unif(0, 1)$ and the
+distribution of $Y | X = x$ is a geometric distribution .
+
+We run a simulation with size: M = {100, 1000, 10000, 100000, 1000000,
+10000000}
+
+```{r simualtion  time}
+rm(list=ls())
+set.seed(13112221)
+Sim <- c(100, 1000, 10000, 100000, 1000000, 10000000)  # vector of the size 
+fin <- c()                # inizialize the the vector of the result
+timing_fun <- function(s){
+  beg <- Sys.time()       # starting time
+  stop_simulations <-  rgeom(n = s, prob = runif(n = s))   # run the simulation
+  fin <- Sys.time() - beg #ending time
+  return(fin)
+}
+
+results <- sapply(Sim , timing_fun)
+
+tab_time <- data.frame (Simulation_size  = c("100", "1000", "10000", "100000", "1000000", "10000000") , Computational_time = results  )   # creating the dataframe of the results
+tab_time
+paste("The median speed over M is : " , median(results))
+
+```
+
+#### 2)
+
+To simulate the actual process fastly, we first generate M $X$ \~
+$Unif(0,1)$ for each of them we generate 10 $Y$ \~ $Unif(0,1)$ and check
+if there is a y greater than x, in case not we repeat the process
+generating 4 times the lenght of Y. The idea of doing that is the
+following:
+
+Most of the time 10 simulations are enough to detect a y greater than
+the x ( explanations are shown below) . If 10 simulations are not enough
+probably the drawn x is big and such that we need to draw more Y.
+
+[Link to exercise one run on
+Colab](https://colab.research.google.com/drive/14VD1MdfOC8uTaIAH2cPVxBjPZ9vhfgn7?usp=sharing#scrollTo=Z7c1CG7eEkZU).
+
+Let's start the analysis with a fixed size M equal to 10000.
+
+```{r Generating distribution }
+condition <- function(y_vec , t = 0 , val){
+  for (y in y_vec){
+    if (y > val){break}
+    else t <- t + 1
+  }
+  return(t)
+}
+
+
+stopping_time <- function(M){
+  beg <- Sys.time()
+  t_data <- rep(NA , M)
+  x <- runif(M)
+  for (m in 1:M){
+    cond <- condition(runif(10) , val = x[m])
+    t <- cond + 1
+    if (cond != 0)
+      while(cond %% 10 == 0){
+        cond <- cond + condition(runif(cond) * 4 , val = x[m])
+        t <- t + cond
+      }
+    t_data[m] <- t
+  } 
+  return(t_data)
+}
+
+
+```
+
+First, we compare the simulation results with the true function:
+
+$$ Pr(T = t) = \frac{1}{t(t+1)}$$ for t $∈${1,2,3,...}
+
+```{r True distribution}
+
+
+pT <- function(t)  1/(t*(t+1))  # True Distribution
+t_seq <- 1:25      #Plot it zooming between t = 1 and t = 25
+M <- 10000
+
+stop_time <- stopping_time(M) 
+p_hat <- proportions(table(stop_time))
+
+# Plot the true distribution
+plot(t_seq, pT(t_seq), 
+     type = "h",
+     lwd = 4,
+     col = "cyan4",
+     ylab = expression(p[T]),
+     xlab = "t",
+     main = "Marginal of the Stopping Time",
+     sub = paste("Simulation size:", M))
+
+# Add the simulation points
+points(t_seq, p_hat[t_seq], pch = 21, 
+       col = "black", bg = "bisque", cex = .7)
+grid()
+
+```
+
+Let's see the series of averages.
+
+```{r Average }
+step_size <- 10    #set a step size
+ave_step  <- seq(1, length(stop_time), step_size)  #start the sequence
+ave_vec <- rep(NA, length(ave_step))                     #pre-allocating the vector
+
+# Compute the simulations averages
+t <- 0
+for (i in ave_step){
+  t <- t + 1
+  ave_vec[t] <- mean( stop_time[1:i] )
+}
+
+```
+
+```{r average}
+{plot(ave_vec , main = "Average stopping time",
+     xlab = "step", ylab = "Averege stopping time",
+     sub = "Simulation study", col = "steelblue" , type = "l" , lwd =3)
+grid()}
+```
+
+## Computational Analysis:
+
+In this section, we would quantitatively check how the simulation size
+impacts the approximation, to show that, we are going to compute the
+distances between the true distribution and the estimated distribution.
+For these analysis, we have used the geometric distribution, since
+returns the same result but computationally faster.
+
+```{r simualtion analysis , eval = FALSE}
+
+M <- 100   #How many errors we want to compute
+diff <- matrix(NA , nrow =  length(Sim) , ncol = M ) 
+for (j in 1:M){
+  i <- 1
+  for (s in Sim){    
+    stop_simulations <-  rgeom(n = s, prob = runif(n = s))   # run the simulation
+    p_hat <- proportions(table(stop_simulations))
+    
+    diff[i,j] <- sum(pT(t_seq) - p_hat[t_seq], na.rm = T) 
+    i <- i + 1
+}
+}
+```
+
+```{r errors plots}
+error_matrix <- readRDS("simulation_data/error_matrix.rds")
+colors <- c("lightgray" , "bisque" , "darkred" , "cyan4" , "Chocolate", "Medium Aquamarine")
+
+plot(error_matrix[1,] , ylim = c(-0.15,0.15), type = "l" ,
+     main = "Serie of errors", col = colors[1], lwd = 2,
+     xlab = "M" , ylab = "Errors per simulation size") 
+for (i in 2:6){
+  points(error_matrix[i,] , col = colors[i] , type = "l", lwd = 2)
+} 
+options(scipen=999)
+legend("topright", legend = Sim , col = colors , lwd = 2 , lty = 1  , bty = "n" )
+grid()
+
+```
+
+The results shown an obvious reduction of the errors over M , the
+greatest difference can be seen from the passage from M = 100 to M =
+1000.
+
+## Statistical Analysis
+
+In this section, we are supposed to be a Casino that wants to introduce
+this experiment in the available games. The player has to pay an amount
+of C euros to start this game and he wins as many euros as the waiting
+time.
+
+The question we are interested to answer is: What is the "fair" amount
+to play this game?
+
+To answer the question, we need to compute the expected value of this
+random variable. The fair amount you pay to enter the game is the
+expected value of the random variable.
+
+The mathematical result provides a solution you can afford to pay any
+amount of C euros to play because on average you expect to win infinite.
+
+Repeating this experiment many times, it will have to happen (with very
+low probability) to win a lot, enough for paying all the expenses
+incurred before.
+
+In practice though, no reasonable person is willing to pay a lot of
+money to play this game. The intuitive refusal to invest large sums in
+the game is well supported by the simulation described in the following
+plot. By repeating the series 10,000 times, on average low winnings are
+obtained at the beginning (a few units). Subsequently, the average
+rises, corresponding to some lucky series, and then decreases slightly
+until the next lucky hit. The overall trend is undoubtedly growing, and
+will mathematically tend to infinity after an infinite series of plays
+but, in the 10,000 plays of the simulation, the average of the winnings
+has just reached the value of 10.
+
+From the statistical point of view, no difficulties is reached from the
+the situation illustrated in the game. In other words, it is perfectly
+coherent to accept the opportunity of an infinite win, such as to
+balance any amount paid in the (infinite) times the win is
+insignificant.
+
+### Conclusion:
+
+Ultimately, the decision to play or not to play this game must depend on
+each individual's risk, itself dependent on many parameters, such as
+initial earnings or the amount you are willing to lose.
+
+If the earnings here are "on average" infinite, you must also have
+infinite budgets and play an infinite number of times to be eligible for
+certain earnings.
+
+No casinos would introduce this game, having the risk of infinite loss.
+
+### Comments and further analysis:
+
+A possible solution is to force the game to finish with a maximum win of
+L after the L-th trials.
+
+Considering the fact of the greatest revenue fixed to L = 8 in the
+simulation study it results that a "fair" amount to pay is :
+
+```{r fixed amount}
+L = 8    # max amount it can be won
+stop_simulation_copy <- stop_time
+stop_simulation_copy[stop_simulation_copy>7] <- L  # set all the observation greater than 7 to L
+print(mean(stop_simulation_copy))
+```
+
+```{r atoher plot }
+tab = proportions(table(stop_simulation_copy))
+library(ggplot2)
+# Create Data
+data=data.frame(tab)
+ggplot(data, aes(x=stop_simulation_copy, y=Freq,fill=stop_simulation_copy))+
+  geom_bar(stat="identity") +
+  theme_minimal() +
+  geom_bar(stat="identity", fill="steelblue")+
+  xlab("stop time") + ylab("Frequencies") +  guides(fill="none") +
+  ggtitle("Barplot of stopping time" ) + 
+  scale_y_continuous(labels=scales::percent)  
+
+```
+
+Remark: 50% of the time the stopping time is equal to 1 corresponding to
+the payoff of the player.
+
+The percentage of the time when the game is stopped is
+
+```{r percentage}
+
+print(data$Freq[data$stop_simulation_copy == 8])
+```
+
+------------------------------------------------------------------------
+
+## Exercise 2 Differential Privacy
+
+### 2.1
+
+In this section, we focus on the univariate case with dimensionality
+$d = 1$ and we set up a simulation in order to compute the MISE: Mean
+Integrated Squared Error between the true model
+$p_{X}(·) ~ Beta(\alpha =10 ,\beta = 10)$ and the two approximation
+$\hat{p}_{n,m}(·)$ and $\hat{q}_{\epsilon,m}(·)$ where:
+
+$$\hat{p}_{n,m}(·) = \sum_{j=1}^{m} \frac{\hat{p}_{j}}{h^{d}} \mathbb{1}( x \in B_{j}) \hspace{0.3cm} with \hspace{0.3cm}  \hat{p}_{j}  = \frac{\hat{n}_{j}}{n}$$
+
+$$\hat{q}_{\epsilon,m}(·) = \sum_{j=1}^{m} \frac{\hat{q}_{j}}{h^{d}} \mathbb{1}( x \in B_{j}) \hspace{0.3cm} with \hspace{0.3cm} \hat{q}_{j} = \frac{\tilde{D_{j}}}{\sum_{s=1}^{m} \tilde{D_{s}}} \hspace{0.3cm} where \hspace{0.3cm} \tilde{D_{j}} = max\{0, D_{j}\} \hspace{0.3cm} and \hspace{0.3cm} D_{j} = \hat{n}_{j} + \nu_{j}$$
+
+```{r packages}
+rm(list=ls())       #Clear output
+library(VGAM)       # Library for the Laplacian Function
+set.seed(13112221)  # For reproducibility
+```
+
+We compute the step function for both $\hat{p}$ and $\hat{q}$.
+
+```{r Step Function for p_hat and q_hat}
+# Step functions for p_hat 
+p_hat_func <- function(x , bins , p_hat){
+  interval <- cut(x, bins, include.lowest = T)
+  return(p_hat[interval])
+}
+
+# Step Function for q_hat 
+q_hat_func <- function(x, bins, q_hat){
+  interval <- cut(x, bins, include.lowest = T)
+  return(q_hat[interval])
+}
+```
+
+Here we wrote the simulation function we are going to run. Inside we
+used the condition to define if the actual distribution is a $Beta$ or a
+Mixture of $Beta$ (Defined below) useful for the task 2.2. This function
+returns:
+
+-   MISE($p_{X} , \hat{p}_{n,m}$)
+
+-   MISE($p_{X} , \hat{q}_{\epsilon,m}$)
+
+-   MISE($\hat{p}_{n,m} , \hat{q}_{\epsilon,m}$)
+
+```{r simulation function}
+#####  Simulation Function #######
+simulation_function <-function(m , sim_size = 100, n=100, h = 1/m , eps = .1, func='beta') #Define the parameters for the function
+    {
+  # Check the actual  distribution
+  if(func == 'beta'){           
+    distr = function(x) dbeta(x,shape1 = 10, shape2 = 10)
+    sample_distr = function(n) rbeta(n, 10, 10)} 
+  else if(func == 'mixture'){
+    distr = dmixture
+    sample_distr = function(n) rmixture(n)}
+  else{stop("The 'func' input is wrong. Choose between 'beta' or 'mixture'!")}   # We only compute for Beta and Mixture
+  
+  matr_integral <- matrix(NA , nrow = sim_size  , ncol = 3)     # Pre allocate teh values
+  
+  for(rep in 1:sim_size){   # Loop over the simulation size
+    
+    X <- sample_distr(n)    # Generate the random sample from the beta distribution
+    
+    bins <- seq(0, 1, h)    # Set the bins
+    
+    intervals <- cut(X, bins, include.lowest = T)  # Rename units with the bins they belong
+    
+    
+    pj_hat <- table(intervals) / n                 # Find the frequencies of units inside each bins
+    
+    
+    p_hat <- as.vector(pj_hat / h)                 # Compute high of each bin dividing the frequencies for the width of the bin
+
+    nu <- rlaplace(m, 0, 2/eps)                    # Generate m values from a Laplacian distribution: one for each bin
+    
+    
+    Dj <- table(intervals) + nu                    # Add the noise nu to every absolute frequencies of each bin
+    
+    Dj[Dj < 0] = 0                                 # Set all the negatives values to 0                      
+    
+    
+    
+    # Find qj_hat dividing max(0, Dj) for the sum of Dj
+    # Check also if sum of Dj is equal to 0 to avoid NaN in R
+    # It would means that all the values are zero
+    if (sum(Dj) != 0){
+      qj_hat <- Dj / sum(Dj)} else {qj_hat <- rep(0, length(Dj))}
+    
+    
+    q_hat <- qj_hat / h                             # Compute the high of the histogram dividing by the width of the columns
+    
+    # Compute the integral
+    p <- integrate(function(x) ( distr(x) - p_hat_func(x,bins = bins , p_hat = p_hat))^2 , lower = 0 , upper = 1, subdivisions = 1200)$value
+    
+    q <- integrate(function(x) (( distr(x) - q_hat_func(x,bins = bins , q_hat = q_hat ))^2), lower = 0 , upper = 1, subdivisions = 1200)$value
+    pq <- integrate(function(x) (( p_hat_func(x,bins = bins , p_hat = p_hat ) - q_hat_func(x,bins = bins , q_hat = q_hat ))^2), lower = 0 , upper = 1, subdivisions = 1200)$value
+   
+    matr_integral[rep,1] <- p         # Allocate the result
+    matr_integral[rep,2] <- q         # Allocate the result
+    matr_integral[rep,3] <- pq        # Allocate the result
+
+    
+  }
+  mise_p <- mean(matr_integral[,1])   #Save the results
+  mise_q <- mean(matr_integral[,2])   #Save the results
+  mise_pq <- mean(matr_integral[,3])
+  return(c(mise_p , mise_q, mise_pq))
+}
+
+
+```
+
+We run the simulation with the parameters setted to :
+
+-   $\epsilon = \{0.1,0.001\}$
+
+-   $n = \{100,1000\}$
+
+-   $m = seq(from = 5 , to =50 , by =1)$
+
+-   $M = 100$
+
+plots are shown below:
+
+```{r final plots}
+
+par(mfrow=c(2,2), font.main=1)
+
+colors <- c("#2297E6", "#DF536B", '#61D04F')
+y_lim <- 6
+eps <- c(.1, .001, .1, .001)
+enne <- c(100, 100, 1000, 1000)
+### Beta Plot
+data <- c('beta_n100_eps_01', 'beta_n100_eps_0001', 'beta_n1000_eps_01', 'beta_n1000_eps_0001')
+
+for(i in 1:4){
+  load(paste0('simulation_data/',data[i],'.RData'))
+  d <- eval(parse(text = data[i]))
+  p_hat <- d$p_hat
+  q_hat <- d$q_hat
+  pq <- d$pq
+  
+  plot(5:(length(p_hat)+4), p_hat, ylab='MISE', xlab='', sub = bquote(epsilon == .(eps[i])), type='l', lwd=3, col=colors[1], ylim=c(0,y_lim), main = paste('n = ', enne[i]))
+  grid()
+  mtext(text = 'm',side = 1, line = 2, cex=.8)
+  points(5:(length(q_hat)+4), q_hat, type='l', lwd=3, col=colors[2])
+  points(5:(length(pq)+4), pq, type='l', lwd=3, col=colors[3])
+}
+
+
+
+```
+
+### 2.2
+
+In this task we repeat the simulation replacing the
+$Beta(\alpha = 10 , \beta = 10)$ with a mixture of two Beta's
+
+$$p_{X}(x) = \pi  \cdot dbeta(x| \alpha_{1}, \beta_{1}) + (1 - \pi) \cdot dbeta(x|\alpha_{2},\beta_{2})  $$
+
+where we have setted the parameter as following :
+
+-   $\pi = 0.6$
+
+-   $\alpha_{1} = 2$
+
+-   $\beta_{1} = 15$
+
+-   $\alpha_{2} = 12$
+
+-   $\beta_{2} = 6$
+
+We define two function to determinate the density distribution of the
+mixture model and  in order to generate a sample of size n from the
+model.
+
+```{r  mixture distribution , eval = FALSE }
+##### Mixture distribution of Beta ######
+dmixture <- function(x, shape_1 = 2 , shape_2 = 15 , shape_3 = 12 , shape_4 = 6 , pi = 0.6 ){
+  f <- pi * dbeta(x, shape1 = shape_1 , shape2 = shape_2) + (1 - pi) * dbeta(x, shape1 = shape_3 , shape2 = shape_4)
+  return(f)
+}
+
+##### Random sample from Mixture Beta  #####
+rmixture <- function(n, shape_1 = 2 , shape_2 = 15 , shape_3 = 12 , shape_4 = 6 , pi = 0.6 ){
+  sam <- c()
+  u <- runif(n)
+  for (x in u){
+    if (x < pi) sam <-c(sam, rbeta(1, shape1 = shape_1 , shape2 = shape_2))
+    else sam <- c(sam , rbeta(1, shape1 = shape_3 , shape2 = shape_4) )
+  }
+  return(sam)
+}
+
+
+
+```
+
+```{r  mixture plots  }
+par(mfrow=c(2,2), font.main=1)
+data <- c('mixture_n100_eps_01', 'mixture_n100_eps_0001', 'mixture_n1000_eps_01', 'mixture_n1000_eps_0001')
+
+for(i in 1:4){
+  load(paste0('simulation_data/',data[i],'.RData'))
+  d <- eval(parse(text = data[i]))
+  p_hat <- d$p_hat
+  q_hat <- d$q_hat
+  pq <- d$pq
+  
+  plot(5:(length(p_hat)+4), p_hat, ylab='MISE', xlab='', sub = bquote(epsilon == .(eps[i])), type='l', lwd=3, col=colors[1], ylim=c(0,y_lim), main = paste('n = ', enne[i]))
+  grid()
+  mtext(text = 'm',side = 1, line = 2, cex=.8)
+  points(5:(length(q_hat)+4), q_hat, type='l', lwd=3, col=colors[2])
+  points(5:(length(pq)+4), pq, type='l', lwd=3, col=colors[3])
+}
+
+```
+
+### Comments on Beta:
+
+The MISE($p_{X} , \hat{p}_{n,m}$) results close to 0 since we are
+evaluating the differences between the true distribution and an
+estimated distribution built from a sample of the true model. Increasing
+the value of n from n = 100 to n = 1000 we can see that the MISE is a
+the decreasing function of m, because by adding more bins the histogram
+will be an adequate representation of the true distribution.
+
+In the case of n = 100 the blue line increase with large m, because we
+have only 100 data to put inside many bins and may happen that a lot of
+bins are empty or with few units inside: this implied a more significant
+distance from the two models.
+
+The MISE($p_{X} , \hat{q}_{\epsilon,m}$) is closer to the
+MISE($p_{X} , \hat{p}_{n,m}$) when we evaluated it with a bigger
+$\epsilon$. In the case of n = 100 the differences is not remarkable but
+increasing n to 1000 the two MISE are obviously more similar. It means
+that when $\epsilon$ is too big , results a not efficient privatization,
+in the other hand, when $\epsilon$ too small we have a good
+privatization to the detriment of huge difference between the two
+distribution.
+
+The MISE($\hat{p}_{n,m} , \hat{q}_{\epsilon,m}$) is a measure of the
+distance between the histogram of $\hat{p}_{n,m}$ and
+$\hat{q}_{\epsilon ,m }$. Results are influenced by the fact that the $\hat{p}_{n,m}(·)$ model, being a good approximation of the true
+model, results a MISE almost always close to 0 and then the
+MISE$( \hat{q}_{\epsilon,m}, \hat{p}_{n,m})$ $\approx$ MISE(
+$\hat{q}_{\epsilon,m}, \hat{p}_{n,m}$).
+
+### Comments on Mixture:
+
+When the actual histogram is sparse, the Laplace noise introduce mass
+into some bins where it should not be, this impact a lot on the
+similarity of the two distribution deleting the clustering structure
+that the model (i.e. Mixture we used ) has.
+
+### 2.3
+
+The goal of this task is to privatize a data set. We collect data by
+having university students fill out a form about the frequency of their
+monthly workouts during 2022/2023. We collect 100 observations in order
+to study the distribution and statistics of this feature that can be
+useful to understand physical health. Work-out are often uncomfortable
+topics and since that we will share a privatized data set built
+according to the perturbed histogram approach.
+
+We set $\epsilon = 0.01$ in order to have a good trade-off of
+privatizing and low informational loss.
+
+We set $m = 15$ in order to have the right proportion of bins and data.
+
+We set $k = 100$ in order to reppresent all the population.
+
+We define a function that privatize a data-set as the following:
+
+```{r  private engine }
+##### Load the dataset #####
+library(readr) 
+fitness <- read_csv("fitness.csv")   # Read the dataset
+n <- nrow(fitness)
+colnames(fitness) <- c("index" , "Frequences_per_mounth")   # Rename the column
+fitness$index <- seq(from = 1 , to = n , by = 1)    
+
+
+# Normalize the data  
+maximum <- max(fitness$Frequences_per_mounth)
+minimun <-  min(fitness$Frequences_per_mounth)
+
+fitness$norm <-  round(( fitness$Frequences_per_mounth -  minimun ) / (maximum - minimun) , 2)
+
+
+##### Build the privatized function #####
+privatized_engine <- function(
+    data = fitness$norm, m = 20 , h = 1 / m , eps = 0.1  )
+  {
+  n = length(data)        # Number of the observations
+  bins <-  seq(0,1,h)     # Number of bins
+  intervals <- cut( data, bins, include.lowest = T)   
+  pj_hat <- table(intervals) / n   
+  p_hat <- as.vector(pj_hat / h)
+  nu <- rlaplace(m, 0, 2/eps)  # Perturbeb data
+  Dj <- table(intervals) + nu 
+  Dj[Dj < 0] = 0 
+  qj_hat = Dj
+  if (sum(qj_hat) != 0){qj_hat <- qj_hat / sum(qj_hat)} else {qj_hat <- rep(0, length(qj_hat))}
+  
+
+  q_absfre <- round(qj_hat * n , 0 )
+
+ 
+  Z <- c()         #Build the new dataset
+  i <- 0
+  for ( x in q_absfre ){
+    i <- i + 1
+    Z <- c(Z, runif(x, bins[i],bins[i+1]))
+  }
+  
+  private_dat <- data.frame(Z)
+  
+  private_dat$index <- seq(from = 1 , to = length(private_dat) , 1) 
+  
+  colnames(private_dat) <- c("privatized_times_norm" , "index")
+  private_dat$privatized_times <- (private_dat$privatized_times_norm) * maximum
+  return(private_dat)
+  
+}
+
+
+dataset <- privatized_engine(data = fitness$norm)
+summary(dataset$privatized_times) 
+ 
+```
+
+```{r hist provatized  }
+
+hist(dataset$privatized_times, main = "Privatized histogram" , xlab = 'times per month' , freq = F , col = "cyan4" , border = "white")
+box()
+```
